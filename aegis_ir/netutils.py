@@ -222,6 +222,20 @@ def is_unicast_mac(mac: str) -> bool:
 
 
 # ---------------------------------------------------------------- 免权限原语
+def find_free_port(start: int = 8765) -> int:
+    """从 start 起找到第一个可用端口（用于端口自适应）。"""
+    import socket
+
+    for p in range(start, start + 100):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("0.0.0.0", p))
+                return p
+            except OSError:
+                continue
+    return start  # fallback
+
+
 def generate_token(nbytes: int = 9) -> str:
     """生成部署令牌（加密随机，18 位十六进制）。"""
     import secrets

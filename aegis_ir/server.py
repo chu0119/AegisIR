@@ -505,15 +505,29 @@ def serve(port=8765, listen="loopback", token=None, open_browser=True):
         from .netutils import generate_token
         token = generate_token()
     TOKEN = token
-    audit_event("gui_start", host=host, port=port)
     restore_stale_sessions()  # 断电/崩溃遗留的隔离先恢复再服务
-    httpd = make_server(host, port)
+
+    # 端口自适应：目标端口被占用时自动递增找下一个
+    from .netutils import find_free_port
+    actual_port = port
+    while True:
+        try:
+            httpd = make_server(host, actual_port)
+            break
+        except OSError:
+            old = actual_port
+            actual_port = find_free_port(actual_port + 1)
+            if actual_port == old:
+                raise SystemExit(f"[!] 端口 {port}-{old} 全部被占用，请用 --port 指定其他端口")
+            print(f"[!] 端口 {old} 被占用，自动切换到 {actual_port}")
+
+    audit_event("gui_start", host=host, port=actual_port)
     print("=" * 60)
-    print(f"  AegisIR 控制台已启动: http://127.0.0.1:{port}/")
+    print(f"  AegisIR 控制台已启动: http://127.0.0.1:{actual_port}/")
     print(f"  本机访问令牌: {token}")
     if host == "0.0.0.0":
         ip = _console_ip() or "127.0.0.1"
-        print(f"  外部访问地址: http://{ip}:{port}/")
+        print(f"  外部访问地址: http://{ip}:{actual_port}/")
         print(f"  令牌: {token}")
         print("  (外部节点/浏览器均可用此令牌接入)")
     print("  Ctrl+C 停止服务（进行中的隔离会自动恢复）")

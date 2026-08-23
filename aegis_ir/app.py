@@ -9,30 +9,17 @@ import threading
 import time
 
 
-def _find_free_port(start=8765):
-    import socket
-
-    for p in range(start, start + 50):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            try:
-                s.bind(("127.0.0.1", p))
-                return p
-            except OSError:
-                continue
-    return start
-
-
 def run_app(port=None, listen="loopback", token=None):
     from .audit import audit_event
     from . import server as _server
     from .server import make_server, shutdown_all
+    from .netutils import find_free_port, generate_token
 
-    from .netutils import generate_token
     host = "127.0.0.1" if listen == "loopback" else "0.0.0.0"
     if not token:
         token = generate_token()
     _server.TOKEN = token  # Handler 运行时读取模块全局 TOKEN
-    port = port or _find_free_port()
+    port = port or find_free_port()
     audit_event("app_start", host=host, port=port)
     _server.restore_stale_sessions()  # 断电/崩溃遗留的隔离先恢复再服务
     httpd = make_server(host, port)
