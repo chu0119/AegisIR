@@ -10,7 +10,8 @@
 ![Version](https://img.shields.io/badge/version-2.3.0-6d8dff?style=flat-square)
 ![Python](https://img.shields.io/badge/Python-3.9%2B-3776ab?style=flat-square&logo=python&logoColor=white)
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-3ddc97?style=flat-square)
-![Tests](https://img.shields.io/badge/tests-23%20passed-22c55e?style=flat-square)
+![Tests](https://github.com/chu0119/AegisIR/actions/workflows/tests.yml/badge.svg?style=flat-square)
+![Release](https://img.shields.io/github/v/release/chu0119/AegisIR?style=flat-square&color=6d8dff)
 ![License](https://img.shields.io/badge/License-%E6%8E%88%E6%9D%83%E4%BD%BF%E7%94%A8-ff5d6c?style=flat-square)
 
 **桌面软件 · Web 控制台 · 命令行 三形态&nbsp;&nbsp;|&nbsp;&nbsp;Windows / Linux 双平台节点&nbsp;&nbsp;|&nbsp;&nbsp;零依赖跨网段部署**
