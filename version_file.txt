@@ -19,7 +19,7 @@ VSVersionInfo(
         StringStruct('FileDescription', 'AegisIR 应急响应网络隔离工具'),
         StringStruct('FileVersion', '2.3.0'),
         StringStruct('InternalName', 'AegisIR'),
-        StringStruct('LegalCopyright', '(c) 2026 星川网络 XingChuan Network. 仅限授权使用'),
+        StringStruct('LegalCopyright', '(c) 2026 星川网络 XingChuan Network. Licensed under AGPL-3.0'),
         StringStruct('OriginalFilename', 'AegisIR.exe'),
         StringStruct('ProductName', 'AegisIR 应急网络隔离台'),
         StringStruct('ProductVersion', '2.3.0'),

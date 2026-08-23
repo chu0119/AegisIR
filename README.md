@@ -12,7 +12,7 @@
 ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-3ddc97?style=flat-square)
 ![Tests](https://github.com/chu0119/AegisIR/actions/workflows/tests.yml/badge.svg?style=flat-square)
 ![Release](https://img.shields.io/github/v/release/chu0119/AegisIR?style=flat-square&color=6d8dff)
-![License](https://img.shields.io/badge/License-%E6%8E%88%E6%9D%83%E4%BD%BF%E7%94%A8-ff5d6c?style=flat-square)
+![License](https://img.shields.io/badge/License-AGPL--3.0-ff5d6c?style=flat-square)
 
 **桌面软件 · Web 控制台 · 命令行 三形态&nbsp;&nbsp;|&nbsp;&nbsp;Windows / Linux 双平台节点&nbsp;&nbsp;|&nbsp;&nbsp;零依赖跨网段部署**
 
@@ -169,4 +169,4 @@ python -m unittest discover -s tests -v   # 23 项，免权限可运行
 
 ## 📄 License
 
-Copyright © 2026 **星川网络 XingChuan Network**. 仅供授权使用，详见 [LICENSE](LICENSE).
+Copyright © 2026 **星川网络 XingChuan Network**. Licensed under the [GNU AGPL-3.0](LICENSE). 使用前须获得资产所有方授权，详见 [LICENSE](LICENSE) 及上方"法律与授权"章节。
