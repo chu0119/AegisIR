@@ -263,12 +263,13 @@ def cmd_status(args):
 
 
 def cmd_gui(args):
-    from .netutils import is_admin
+    from .netutils import is_admin, generate_token
     from .server import serve
 
     if not is_admin():
         _print("[!] 未以管理员运行：控制台仍可打开，但探测/隔离将受限，建议管理员身份重启")
-    serve(port=args.port, listen=args.listen, token=args.token,
+    token = args.token or generate_token()
+    serve(port=args.port, listen=args.listen, token=token,
           open_browser=not args.no_browser)
 
 
@@ -353,16 +354,16 @@ def build_parser():
 
     gp = sub.add_parser("gui", help="启动 Web 控制台（浏览器访问）")
     gp.add_argument("--port", type=int, default=8765, help="监听端口（默认 8765）")
-    gp.add_argument("--listen", choices=["loopback", "any"], default="loopback",
-                    help="loopback=仅本机(默认)；any=对外监听供其他网段控制台接入")
-    gp.add_argument("--token", default=None, help="对外监听时必须设置的访问令牌")
+    gp.add_argument("--listen", choices=["loopback", "any"], default="any",
+                    help="any=对外监听(默认)；loopback=仅本机访问")
+    gp.add_argument("--token", default=None, help="访问令牌（默认自动生成）")
     gp.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
     gp.set_defaults(func=cmd_gui)
 
     ap = sub.add_parser("app", help="桌面窗口模式（原生应用窗口，双击 exe 即此模式）")
     ap.add_argument("--port", type=int, default=None, help="监听端口（默认自动分配）")
-    ap.add_argument("--listen", choices=["loopback", "any"], default="loopback",
-                    help="loopback=仅本机(默认)；any=对外监听供其他网段控制台接入")
+    ap.add_argument("--listen", choices=["loopback", "any"], default="any",
+                    help="any=对外监听(默认)；loopback=仅本机访问")
     ap.add_argument("--token", default=None, help="对外监听时必须设置的访问令牌")
     ap.set_defaults(func=cmd_app)
     return p

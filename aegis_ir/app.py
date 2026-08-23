@@ -27,9 +27,10 @@ def run_app(port=None, listen="loopback", token=None):
     from . import server as _server
     from .server import make_server, shutdown_all
 
+    from .netutils import generate_token
     host = "127.0.0.1" if listen == "loopback" else "0.0.0.0"
-    if listen != "loopback" and not token:
-        raise SystemExit("[!] 对外监听(--listen any)必须同时设置 --token")
+    if not token:
+        token = generate_token()
     _server.TOKEN = token  # Handler 运行时读取模块全局 TOKEN
     port = port or _find_free_port()
     audit_event("app_start", host=host, port=port)

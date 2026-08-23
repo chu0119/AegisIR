@@ -501,18 +501,23 @@ def shutdown_all(httpd):
 def serve(port=8765, listen="loopback", token=None, open_browser=True):
     global TOKEN
     host = "127.0.0.1" if listen == "loopback" else "0.0.0.0"
-    if listen != "loopback" and not token:
-        raise SystemExit("[!] 对外监听(--listen any)必须同时设置 --token，防止被未授权调用")
+    if not token:
+        from .netutils import generate_token
+        token = generate_token()
     TOKEN = token
     audit_event("gui_start", host=host, port=port)
     restore_stale_sessions()  # 断电/崩溃遗留的隔离先恢复再服务
     httpd = make_server(host, port)
-    print("=" * 56)
+    print("=" * 60)
     print(f"  AegisIR 控制台已启动: http://127.0.0.1:{port}/")
+    print(f"  本机访问令牌: {token}")
     if host == "0.0.0.0":
-        print("  节点对外监听（其他网段控制台可接入），token 已启用")
-    print("  Ctrl+C 停止服务（进行中的隔离会自动恢复目标网络）")
-    print("=" * 56)
+        ip = _console_ip() or "127.0.0.1"
+        print(f"  外部访问地址: http://{ip}:{port}/")
+        print(f"  令牌: {token}")
+        print("  (外部节点/浏览器均可用此令牌接入)")
+    print("  Ctrl+C 停止服务（进行中的隔离会自动恢复）")
+    print("=" * 60)
     if open_browser:
         try:
             webbrowser.open(f"http://127.0.0.1:{port}/")
