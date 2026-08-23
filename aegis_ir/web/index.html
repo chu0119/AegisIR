@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AegisIR · 应急网络隔离台</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡</text></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ══════════ 侧边导航 ══════════ -->
+  <aside id="sidebar">
+    <div class="brand">
+      <div class="logo">🛡</div>
+      <div>
+        <div class="name">AegisIR</div>
+        <div class="sub">应急网络隔离台</div>
+      </div>
+    </div>
+
+    <nav>
+      <button class="nav-item active" data-view="scan">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16" y2="16"/><circle cx="11" cy="11" r="2.4" class="f"/></svg>
+        <span>探测目标</span>
+      </button>
+      <button class="nav-item" data-view="iso">
+        <svg viewBox="0 0 24 24"><path d="M12 2l8 3.5v5.7c0 5-3.4 9-8 10.8-4.6-1.8-8-5.8-8-10.8V5.5z"/><line x1="4" y1="4" x2="20" y2="20"/></svg>
+        <span>隔离监控</span>
+        <i id="isoBadge" class="badge hidden">0</i>
+      </button>
+      <button class="nav-item" data-view="history">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+        <span>历史审计</span>
+      </button>
+      <button class="nav-item" data-view="nodes">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><ellipse cx="12" cy="12" rx="4" ry="9"/></svg>
+        <span>节点管理</span>
+      </button>
+      <button class="nav-item" data-view="settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.09a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h.09a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.09a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
+        <span>设置</span>
+      </button>
+    </nav>
+
+    <div class="side-foot">
+      <div id="engineBadge" class="engine">引擎加载中</div>
+      <div class="ver">v2.3</div>
+      <div class="copyright">© 2026 星川网络</div>
+    </div>
+  </aside>
+
+  <!-- ══════════ 主区域 ══════════ -->
+  <div id="main">
+    <header id="topbar">
+      <h1 id="viewTitle">探测目标</h1>
+      <div id="pills" class="pills"></div>
+      <div class="node-bar">
+        <select id="nodeSelect" title="切换节点"></select>
+        <button id="nodeAdd" class="btn ghost sm">＋节点</button>
+      </div>
+    </header>
+
+    <div id="banner" class="banner hidden"></div>
+
+    <!-- 视图 1：探测 -->
+    <section id="view-scan" class="view">
+      <div class="card">
+        <div class="scan-form">
+          <div class="field">
+            <label>网卡</label>
+            <select id="ifaceSel" class="input"></select>
+          </div>
+          <div class="field grow">
+            <label>目标（网段或 IP 范围）</label>
+            <input id="netInput" class="input" placeholder="192.168.1.0/24 或 192.168.1.10-192.168.1.60">
+          </div>
+          <div class="field">
+            <label>引擎</label>
+            <select id="engineSel" class="input">
+              <option value="auto">自动</option>
+              <option value="raw">完整 raw（需管理员）</option>
+              <option value="compat">兼容 compat（免权限）</option>
+            </select>
+          </div>
+          <button id="scanBtn" class="btn primary">开始探测</button>
+        </div>
+        <div class="scan-form second">
+          <label class="chk"><input type="checkbox" id="optPassive"><span>零流量被动（只读 ARP 表，完全静默）</span></label>
+          <div id="rawMethods" class="method-chips hidden">
+            <span class="lbl">raw 手段：</span>
+            <label class="mchip"><input type="checkbox" value="arp"><span>ARP</span></label>
+            <label class="mchip"><input type="checkbox" value="icmp"><span>ICMP</span></label>
+            <label class="mchip"><input type="checkbox" value="tcp"><span>TCP</span></label>
+            <label class="mchip"><input type="checkbox" value="udp"><span>UDP</span></label>
+          </div>
+          <label class="chk"><input type="checkbox" id="optPorts"><span>深度端口</span></label>
+        </div>
+        <div id="scanProgress" class="progress hidden">
+          <div class="bar"><i></i></div><span class="txt"></span>
+        </div>
+        <div id="scanHint" class="hint-line"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h2>探测结果<span id="hostsMeta" class="meta"></span></h2>
+          <div class="manual">
+            <input id="manualIp" class="input sm" placeholder="手动输入目标 IP">
+            <button id="manualBtn" class="btn sm">隔离</button>
+          </div>
+          <input id="filterInput" class="input sm" placeholder="筛选 IP / 主机名 / 厂商">
+          <button id="csvBtn" class="btn sm">导出 CSV</button>
+          <button id="batchBtn" class="btn sm danger hidden">隔离所选 (<b id="batchCount">0</b>)</button>
+        </div>
+        <div class="hint-line" style="margin-top:-4px">点击任意行可展开<b>设备详情</b>进行研判（完整厂商 / 端口 / 实时深度探测）</div>
+        <div class="table-wrap grow">
+          <table id="hostsTable">
+            <thead><tr>
+              <th class="cb"><input type="checkbox" id="selAll" title="全选"></th>
+              <th>#</th><th>IP 地址</th><th>MAC</th><th>厂商</th><th>主机名</th>
+              <th>命中手段</th><th>开放端口</th><th>标签</th><th>操作</th>
+            </tr></thead>
+            <tbody><tr class="empty"><td colspan="10">暂无数据 · 请先选择网卡与目标开始探测</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- 视图 2：隔离监控 -->
+    <section id="view-iso" class="view hidden">
+      <div id="isoEmpty" class="card empty-hero hidden">
+        <div class="eh-icon">🛡</div>
+        <div class="eh-title">当前没有隔离中的目标</div>
+        <div class="eh-desc">在「探测目标」视图点击目标行的<b>隔离</b>按钮，或直接输入目标 IP 发起隔离。<br>隔离后目标可在数秒内一键恢复，也可设置自动恢复时长。</div>
+        <div class="manual-center">
+          <input id="manualIp2" class="input" placeholder="输入目标 IP">
+          <button id="manualBtn2" class="btn danger">发起隔离</button>
+        </div>
+      </div>
+      <div id="activeList"></div>
+    </section>
+
+    <!-- 视图 3：历史审计 -->
+    <section id="view-history" class="view hidden">
+      <div class="card">
+        <h2>隔离会话</h2>
+        <div class="table-wrap">
+          <table id="sessTable">
+            <thead><tr><th>开始时间</th><th>目标</th><th>模式</th><th>状态</th></tr></thead>
+            <tbody><tr class="empty"><td colspan="4">暂无</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="card">
+        <h2>审计日志 <span class="meta">所有操作自动留档，可用于应急复盘</span></h2>
+        <div id="auditFeed" class="audit"><div class="hint">暂无记录</div></div>
+      </div>
+    </section>
+
+    <!-- 视图 4：节点管理 -->
+    <section id="view-nodes" class="view hidden">
+      <div class="card">
+        <h2>当前节点环境</h2>
+        <dl id="envBody" class="env"><span class="hint">加载中 ...</span></dl>
+      </div>
+      <div class="card">
+        <h2>一行命令部署新节点 <span class="meta">把生成的命令贴到目标网段机器上执行即可</span></h2>
+        <div id="deployWarn" class="m-block hidden"></div>
+        <div class="deploy-block">
+          <div class="dl-head"><b>Linux / macOS</b>（终端执行，会自动装 python3 并拉起节点）
+            <button class="btn sm primary" id="copySh">复制命令</button></div>
+          <code id="cmdSh" class="code wide">生成中 …</code>
+        </div>
+        <div class="deploy-block">
+          <div class="dl-head"><b>Windows</b>（管理员 PowerShell 执行，自动下载 exe 并拉起节点）
+            <button class="btn sm primary" id="copyPs">复制命令</button></div>
+          <code id="cmdPs" class="code wide">生成中 …</code>
+        </div>
+        <div class="hint-line">
+          Linux 节点仅需 python3（无则脚本自动尝试安装），<b>零 pip 依赖、无需 Npcap</b>（root 即完整引擎）；
+          Windows 节点自动下载 AegisIR.exe（隔离需 Npcap，缺失时用免权限引擎探测）。
+          令牌已内嵌在命令中，部署完成后点上方「＋节点」填节点地址即可接入。
+        </div>
+        <div class="hint-line">部署令牌：<b id="tokenShow" class="mono"></b>
+          <button id="tokenRegen" class="btn sm">换一个令牌</button>（更换后旧命令即失效，需重新复制）</div>
+      </div>
+      <div class="card">
+        <h2>已接入节点</h2>
+        <div id="nodeList"></div>
+      </div>
+    </section>
+
+    <!-- 视图 5：设置 -->
+    <section id="view-settings" class="view hidden">
+      <div class="card">
+        <h2>隔离默认参数 <span class="meta">新建隔离时的预填值，单次可在隔离弹窗内覆盖</span></h2>
+        <div class="set-grid">
+          <div class="field">
+            <label>默认隔离模式</label>
+            <select id="setMode" class="input">
+              <option value="offnet">断外网（推荐首选）</option>
+              <option value="island">彻底断网（同网段全断）</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>默认自动恢复（分钟，0 = 不限）</label>
+            <input id="setDur" type="number" class="input" value="30" min="0" step="5">
+          </div>
+          <div class="field">
+            <label>发包间隔（秒，0.3-5，越小抢占越快但流量越大）</label>
+            <input id="setInterval" type="number" class="input" value="1" min="0.3" max="5" step="0.1">
+          </div>
+          <div class="field">
+            <label>污染用假 MAC（须为单播，默认 de:ad:be:ef:00:01）</label>
+            <input id="setFakeMac" class="input" placeholder="de:ad:be:ef:00:01">
+          </div>
+        </div>
+        <div class="m-actions"><button id="setSave" class="btn primary">保存设置</button></div>
+      </div>
+      <div class="card">
+        <h2>关于</h2>
+        <dl class="env">
+          <dt>产品</dt><dd>AegisIR 应急网络隔离台 v2.3</dd>
+          <dt>版权</dt><dd>© 2026 星川网络</dd>
+          <dt>用途声明</dt><dd>仅限授权应急响应 / 内网安全测试使用，操作均有审计留档</dd>
+        </dl>
+      </div>
+    </section>
+  </div>
+</div>
+
+<!-- ══════════ 设备详情抽屉 ══════════ -->
+<div id="drawerMask" class="modal hidden"></div>
+<aside id="drawer" class="hidden">
+  <div class="dw-head">
+    <h3 id="dwIp">—</h3>
+    <button id="dwClose" class="btn sm ghost">关闭 ✕</button>
+  </div>
+  <div id="dwBadges" class="dw-badges"></div>
+  <div class="dw-sec"><h4>基本信息</h4><dl id="dwInfo" class="env"></dl></div>
+  <div class="dw-sec"><h4>命中手段</h4><div id="dwHits" class="dw-hits"></div></div>
+  <div class="dw-sec"><h4>端口与服务</h4><div id="dwPorts" class="hint">未深度探测</div></div>
+  <div class="dw-sec">
+    <h4>实时探测 <button id="dwProbe" class="btn sm primary">深度探测</button></h4>
+    <div id="dwProbeOut" class="hint">点击「深度探测」实时检测目标可达性并扫描常见端口</div>
+  </div>
+  <div class="dw-actions">
+    <button id="dwIsolate" class="btn danger">隔离此设备</button>
+  </div>
+</aside>
+
+<!-- ══════════ 隔离确认弹窗 ══════════ -->
+<div id="modal" class="modal hidden">
+  <div class="modal-box">
+    <div id="mNormal">
+      <h3 id="mTitle">确认隔离目标</h3>
+      <div id="mTarget" class="m-target"></div>
+      <div id="mProbe" class="m-probe hidden">可达性检测中 …</div>
+      <div id="mBlock" class="m-block hidden"></div>
+      <div id="mModes" class="modes"></div>
+      <div id="mExclude" class="m-row hidden">
+        <label>保护名单（island 模式不参与污染的 IP，逗号分隔，如监控/域控）</label>
+        <input id="mExcludeInput" class="input" placeholder="192.168.1.10,192.168.1.11">
+      </div>
+      <div class="m-row">
+        <label>自动恢复时长</label>
+        <div class="dur-row">
+          <div class="presets">
+            <button class="pre" data-min="5">5分钟</button>
+            <button class="pre on" data-min="30">30分钟</button>
+            <button class="pre" data-min="120">2小时</button>
+            <button class="pre" data-min="0">不限</button>
+          </div>
+          <input id="mDur" type="number" class="input" value="30" min="0" step="5" title="分钟，0=不限">
+        </div>
+      </div>
+      <details class="adv">
+        <summary>高级选项（本次覆盖默认值）</summary>
+        <div class="set-grid">
+          <div class="field"><label>发包间隔（秒）</label><input id="mInterval" type="number" class="input" value="1" min="0.3" max="5" step="0.1"></div>
+          <div class="field"><label>污染用假 MAC</label><input id="mFakeMac" class="input" placeholder="de:ad:be:ef:00:01"></div>
+        </div>
+      </details>
+      <label class="chk"><input type="checkbox" id="mDry"><span>演练模式（只预览数据包，不实际发送）</span></label>
+      <div class="m-actions">
+        <button id="mCancel" class="btn">取消</button>
+        <button id="mOk" class="btn danger">确认隔离</button>
+      </div>
+    </div>
+    <div id="mPreview" class="hidden">
+      <h3>演练预览</h3>
+      <div id="mPvInfo" class="hint-line"></div>
+      <pre id="mPvBody" class="code"></pre>
+      <div class="m-actions"><button id="mClose" class="btn">关闭</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ 添加节点弹窗 ══════════ -->
+<div id="nodeModal" class="modal hidden">
+  <div class="modal-box narrow">
+    <h3>接入已部署的节点</h3>
+    <div class="m-row">
+      <label>节点地址</label>
+      <input id="nmUrl" class="input" placeholder="http://10.1.2.3:8765">
+    </div>
+    <div class="m-row">
+      <label>令牌（部署命令中的 token）</label>
+      <input id="nmToken" class="input" placeholder="留空表示未设置">
+    </div>
+    <div class="m-row">
+      <label>备注名（可选）</label>
+      <input id="nmName" class="input" placeholder="如：3楼办公网段">
+    </div>
+    <div class="m-actions">
+      <button id="nmCancel" class="btn">取消</button>
+      <button id="nmOk" class="btn primary">测试并接入</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="app.js"></script>
+</body>
+</html>

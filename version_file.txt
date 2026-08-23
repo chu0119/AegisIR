@@ -1,0 +1,30 @@
+# UTF-8
+#
+# AegisIR 版本信息（PyInstaller --version-file）
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    filevers=(2, 3, 0, 0),
+    prodvers=(2, 3, 0, 0),
+    mask=0x3f,
+    flags=0x0,
+    OS=0x40004,
+    fileType=0x1,
+    subtype=0x0,
+    date=(0, 0)
+  ),
+  kids=[
+    StringFileInfo([
+      StringTable('080404b0', [
+        StringStruct('CompanyName', '星川网络 XingChuan Network'),
+        StringStruct('FileDescription', 'AegisIR 应急响应网络隔离工具'),
+        StringStruct('FileVersion', '2.3.0'),
+        StringStruct('InternalName', 'AegisIR'),
+        StringStruct('LegalCopyright', '(c) 2026 星川网络 XingChuan Network. 仅限授权使用'),
+        StringStruct('OriginalFilename', 'AegisIR.exe'),
+        StringStruct('ProductName', 'AegisIR 应急网络隔离台'),
+        StringStruct('ProductVersion', '2.3.0'),
+      ])
+    ]),
+    VarFileInfo([VarStruct('Translation', [2052, 1200])])
+  ]
+)

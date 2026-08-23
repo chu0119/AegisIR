@@ -1,0 +1,21 @@
+# 运行时产物
+var/
+dist/
+build/
+*.spec
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# 测试与工具缓存
+.pytest_cache/
+.playwright-mcp/
+.coverage
+
+# 系统文件
+Thumbs.db
+.DS_Store

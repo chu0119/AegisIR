@@ -1,0 +1,6 @@
+# 核心依赖（命令行 + Web 控制台 + 桌面窗口）
+scapy>=2.5.0
+pywebview>=5.0        # 桌面窗口模式（Windows 使用系统 WebView2）；缺失时自动回退浏览器
+
+# 打包单文件 EXE（可选）
+# pyinstaller>=6.0
