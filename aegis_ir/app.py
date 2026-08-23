@@ -59,6 +59,7 @@ def run_app(port=None, listen="loopback", token=None):
         "AegisIR · 应急网络隔离台", url,
         width=1280, height=840, min_size=(1000, 680),
         background_color="#0b0e14",
+        text_select=True,            # 允许选中文字（默认禁用）
     )
     try:
         webview.start()  # 阻塞直到窗口关闭

@@ -28,6 +28,9 @@ body {
   color: var(--tx);
   font: 14px/1.55 "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
   overflow: hidden;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: default;
 }
 #app { display: flex; height: 100vh; }
 
