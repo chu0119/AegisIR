@@ -202,6 +202,53 @@ def _do_isolate(body):
     return {"ok": True, "victim_ip": ip, "mode": iso.mode}
 
 
+def _do_verify(body):
+    """主动验证目标隔离状态：ping 可达性 + 流量分析 + 综合判定。"""
+    ip = str(body.get("ip") or "").strip()
+    if not ip:
+        return {"error": "缺少 IP"}
+
+    # 查找在线隔离
+    active = None
+    for item in manager.snapshot():
+        if item["victim_ip"] == ip:
+            active = item
+            break
+
+    if not active:
+        return {"error": f"{ip} 不在隔离中"}
+
+    # 主动 ping 测试
+    from .netutils import sys_ping, tcp_connect_probe
+    ping_ok = sys_ping(ip, timeout_ms=1000)
+    tcp_hits = tcp_connect_probe(ip, (445, 80, 22), 0.8) if not ping_ok else []
+
+    now = time.time()
+    status = active.get("status", "uncertain")
+    verdict_map = {
+        "confirmed": "✅ 确认已断网 — 目标反复广播 ARP 找网关，且无出站流量",
+        "likely": "🟡 大概率已断网 — 有 ARP 广播迹象，但可能有残余流量",
+        "uncertain": "⚪ 状态不确定 — 未观察到明确信号（目标可能空闲）",
+        "failed": "❌ 隔离未生效 — 目标仍在主动访问外部网络",
+        "drill": "🔧 演练模式 — 未实际发送数据包",
+    }
+
+    return {
+        "ip": ip,
+        "status": status,
+        "verdict": verdict_map.get(status, status),
+        "ping_reachable": ping_ok,
+        "tcp_ports": [{"port": p, "state": s} for p, s in tcp_hits],
+        "arp_broadcasts": active.get("arp_requests", 0),
+        "outbound_packets": active.get("outbound_pkts", 0),
+        "seconds_since_arp": active.get("seconds_since_arp", -1),
+        "seconds_since_outbound": active.get("seconds_since_outbound", -1),
+        "isolated_seconds": active.get("elapsed", 0),
+        "mode": active.get("mode", "offnet"),
+        "timestamp": time.strftime("%H:%M:%S"),
+    }
+
+
 def _do_restore(body):
     ip = str(body.get("ip") or "").strip()
     if not ip:
@@ -432,6 +479,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(_do_isolate(body))
         if path == "/api/restore":
             return self._json(_do_restore(body))
+        if path == "/api/verify":
+            return self._json(_do_verify(body))
         if path == "/api/probe":
             return self._json(_probe(body))
         return self._json({"error": "未知接口"}, 404)

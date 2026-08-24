@@ -467,6 +467,19 @@ function exportCsv() {
 }
 
 /* ═══════════ 渲染：隔离视图 ═══════════ */
+const STATUS_INFO = {
+  confirmed: { icon: "✅", text: "确认已断网", cls: "st-ok",
+    desc: "目标反复广播 ARP 找网关，且无出站流量" },
+  likely:    { icon: "🟡", text: "大概率断网", cls: "st-warn",
+    desc: "有 ARP 广播迹象，但可能有残余流量" },
+  uncertain: { icon: "⚪", text: "状态不确定", cls: "st-unknown",
+    desc: "未观察到明确信号（目标可能空闲）" },
+  failed:    { icon: "❌", text: "隔离未生效", cls: "st-bad",
+    desc: "目标仍在主动访问外部网络" },
+  drill:     { icon: "🔧", text: "演练模式", cls: "st-drill",
+    desc: "未实际发送数据包" },
+};
+
 function renderActive() {
   const list = $("#activeList");
   const empty = $("#isoEmpty");
@@ -480,31 +493,86 @@ function renderActive() {
   }
   empty.classList.add("hidden");
   list.innerHTML = state.active.map(a => {
-    const verify = a.arp_requests !== undefined && !a.dry_run
-      ? (a.verified
-          ? `<span class="verify ok" title="已观察到目标反复广播网关 ARP 请求">隔离生效确认</span>`
-          : `<span class="verify wait" title="尚未观察到目标 ARP 广播（可能目标不在线或 compat 引擎无验证）">生效验证中</span>`)
-      : "";
+    const si = STATUS_INFO[a.status] || STATUS_INFO.uncertain;
     return `
-    <div class="active-item">
-      <div>
-        <div class="ip">${esc(a.victim_ip)} ${a.dry_run ? '<span class="tag drill">演练</span>' : ""}</div>
-        <div class="hint">${esc(a.victim_mac)}</div>
+    <div class="iso-card ${si.cls}">
+      <div class="iso-head">
+        <div class="iso-status">
+          <span class="st-icon">${si.icon}</span>
+          <div>
+            <div class="st-text">${si.text}</div>
+            <div class="st-desc">${si.desc}</div>
+          </div>
+        </div>
+        <div class="iso-timer">
+          <div class="timer">${fmtElapsed(a.elapsed)}</div>
+          <div class="hint">已隔离</div>
+        </div>
       </div>
-      <div class="info">
-        模式 <b>${a.mode === "island" ? "彻底断网" : "断外网"}</b> ·
-        累计发包 <b>${a.sent}</b>${verify ? "<br>" + verify : ""}<br>
-        <span class="hint">${a.arp_requests ? `目标 ARP 广播 ${a.arp_requests} 次` : "目标 ARP 广播 0 次（未生效或不可验证）"}</span>
+      <div class="iso-target">
+        <span class="ip">${esc(a.victim_ip)}</span>
+        <span class="hint">${esc(a.victim_mac)}</span>
+        <span class="tag">${a.mode === "island" ? "彻底断网" : "断外网"}</span>
+        ${a.dry_run ? '<span class="tag drill">演练</span>' : ""}
       </div>
-      <div style="text-align:center">
-        <div class="timer">${fmtElapsed(a.elapsed)}</div>
-        <div class="hint">已隔离时长</div>
+      <div class="iso-metrics">
+        <div class="metric">
+          <div class="m-val">${a.arp_requests}</div>
+          <div class="m-label">ARP 广播</div>
+        </div>
+        <div class="metric">
+          <div class="m-val">${a.outbound_pkts}</div>
+          <div class="m-label">出站包</div>
+        </div>
+        <div class="metric">
+          <div class="m-val">${a.sent}</div>
+          <div class="m-label">累计发包</div>
+        </div>
+        <div class="metric">
+          <div class="m-val">${a.seconds_since_arp >= 0 ? a.seconds_since_arp + "s" : "—"}</div>
+          <div class="m-label">上次 ARP</div>
+        </div>
+        <div class="metric">
+          <div class="m-val">${a.seconds_since_outbound >= 0 ? a.seconds_since_outbound + "s" : "—"}</div>
+          <div class="m-label">上次出站</div>
+        </div>
       </div>
-      <button class="btn ok" data-ip="${esc(a.victim_ip)}">恢复网络</button>
+      <div class="iso-actions">
+        <button class="btn verify-btn" data-verify="${esc(a.victim_ip)}">🔍 立即验证</button>
+        <button class="btn ok" data-restore="${esc(a.victim_ip)}">恢复网络</button>
+      </div>
+      <div class="iso-verify-result hidden" id="vr-${esc(a.victim_ip).replace(/\./g, '_')}"></div>
     </div>`;
   }).join("");
-  list.querySelectorAll("button[data-ip]").forEach(b =>
-    b.addEventListener("click", () => doRestore(b.dataset.ip)));
+  list.querySelectorAll("button[data-restore]").forEach(b =>
+    b.addEventListener("click", () => doRestore(b.dataset.restore)));
+  list.querySelectorAll("button[data-verify]").forEach(b =>
+    b.addEventListener("click", () => doVerify(b.dataset.verify)));
+}
+
+async function doVerify(ip) {
+  const el = document.getElementById(`vr-${ip.replace(/\./g, "_")}`);
+  if (!el) return;
+  el.classList.remove("hidden");
+  el.innerHTML = '<span class="hint">⏳ 正在主动验证…</span>';
+  try {
+    const r = await api("/api/verify", { method: "POST", body: JSON.stringify({ ip }) });
+    if (r.error) { el.innerHTML = `<span class="hint" style="color:#ff9aa4">${esc(r.error)}</span>`; return; }
+    const si = STATUS_INFO[r.status] || STATUS_INFO.uncertain;
+    el.innerHTML = `
+      <div class="vr-result">
+        <div class="vr-verdict ${si.cls}">${si.icon} ${esc(r.verdict)}</div>
+        <div class="vr-detail">
+          ping 可达: <b>${r.ping_reachable ? "是" : "否"}</b>
+          ${r.tcp_ports.length ? ` · TCP: ${r.tcp_ports.map(t => t.port).join(",")}` : ""}
+          · ARP 广播 <b>${r.arp_broadcasts}</b> 次
+          · 出站包 <b>${r.outbound_packets}</b> 个
+          · 验证时间 ${r.timestamp}
+        </div>
+      </div>`;
+  } catch (e) {
+    el.innerHTML = `<span class="hint" style="color:#ff9aa4">验证失败: ${esc(e.message)}</span>`;
+  }
 }
 
 /* ═══════════ 渲染：历史 / 审计 ═══════════ */

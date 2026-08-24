@@ -61,37 +61,69 @@ class Isolator:
         self.iface = iface
         self.dry_run = dry_run
         self.no_restore = no_restore
-        self.stats = {"sent": 0, "rounds": 0, "arp_requests": 0}
+        self.stats = {
+            "sent": 0, "rounds": 0,
+            "arp_requests": 0,       # 目标对网关的 who-has 广播次数
+            "outbound_pkts": 0,      # 目标发往非本网段的数据包数（>0 = 还能上网）
+            "outbound_bytes": 0,     # 出站总字节
+            "last_arp_req": 0,       # 最近一次 ARP 广播时间戳
+            "last_outbound": 0,      # 最近一次出站数据时间戳
+        }
         self.session_file = None
         self.started_ts = None
         self._sniffer = None
 
     def _start_verifier(self):
-        """隔离生效验证（仅 raw 引擎）：嗅探目标对网关的 ARP 广播请求。
+        """三维验证嗅探器：ARP 广播 + 出站流量 + 综合判定。
 
-        隔离生效后目标无法通过假 MAC 到达网关，会反复广播 who-has，
-        计数持续增长即为隔离已生效的直接迹象。
+        - 目标反复广播 who-has 网关 → 丢了网关（隔离生效迹象）
+        - 目标仍有 TCP/UDP/ICMP 发往非本网段 → 还能上网（隔离失败）
+        - 两者结合可准确判定隔离状态
         """
-        from scapy.all import ARP, AsyncSniffer
+        from scapy.all import ARP, AsyncSniffer, IP
 
         from .netutils import raw_engine_ok
 
         if self.dry_run or not raw_engine_ok():
             return
-        victim_mac, gw_ip = self.victim_mac, self.gateway_ip
+        victim_mac = self.victim_mac
+        victim_ip = self.victim_ip
+        gw_ip = self.gateway_ip
+
+        # 获取本机直连网段（用于判断目标包是否发往"外部"）
+        own_ip = None
+        try:
+            from scapy.all import conf
+            own_ip = getattr(conf.iface, "ip", None) or "127.0.0.1"
+        except Exception:
+            own_ip = "127.0.0.1"
 
         def _on_pkt(pkt):
             try:
-                arp = pkt[ARP]
-                if (arp.op == 1 and str(arp.hwsrc).lower() == victim_mac
-                        and arp.pdst == gw_ip):
-                    self.stats["arp_requests"] += 1
+                # 维度 1：ARP 广播（目标找网关 = 丢了网关）
+                if ARP in pkt:
+                    arp = pkt[ARP]
+                    if (arp.op == 1 and str(arp.hwsrc).lower() == victim_mac
+                            and arp.pdst == gw_ip):
+                        self.stats["arp_requests"] += 1
+                        self.stats["last_arp_req"] = time.time()
+
+                # 维度 2：出站流量（目标还在发数据到外部 = 未断网）
+                if IP in pkt:
+                    ip = pkt[IP]
+                    if ip.src == victim_ip and ip.dst != own_ip:
+                        # 排除 ARP（非 IP 层）、排除发给网关本身的包
+                        if ip.dst != gw_ip and not ip.dst.startswith("224.") \
+                                and not ip.dst.startswith("239.") \
+                                and not ip.dst.endswith("255"):
+                            self.stats["outbound_pkts"] += 1
+                            self.stats["outbound_bytes"] += len(pkt)
+                            self.stats["last_outbound"] = time.time()
             except Exception:
                 pass
 
         try:
-            self._sniffer = AsyncSniffer(filter="arp", prn=_on_pkt,
-                                         iface=self.iface, store=False)
+            self._sniffer = AsyncSniffer(prn=_on_pkt, iface=self.iface, store=False)
             self._sniffer.start()
         except Exception:
             self._sniffer = None
@@ -105,9 +137,39 @@ class Isolator:
             self._sniffer = None
 
     @property
-    def verified(self) -> bool:
-        """是否已观察到隔离生效迹象（目标反复 ARP 广播）。"""
-        return self.stats.get("arp_requests", 0) >= 3
+    def isolation_status(self) -> str:
+        """多维度综合判定隔离状态。
+
+        返回值：
+        - "confirmed"  确认断网（ARP 广播活跃 + 无出站流量）
+        - "likely"     大概率断网（有 ARP 广播，但可能有少量出站）
+        - "uncertain"  不确定（无信号，目标可能空闲）
+        - "failed"     隔离失败（目标仍有持续出站流量）
+        - "drill"      演练模式
+        """
+        if self.dry_run:
+            return "drill"
+
+        now = time.time()
+        arp_count = self.stats.get("arp_requests", 0)
+        arp_recent = now - self.stats.get("last_arp_req", 0) < 60
+        outbound_count = self.stats.get("outbound_pkts", 0)
+        outbound_recent = now - self.stats.get("last_outbound", 0) < 15
+
+        # 目标仍在持续发外部流量 → 隔离失败
+        if outbound_recent and outbound_count > 5:
+            return "failed"
+
+        # ARP 广播活跃 + 无近期出站 → 确认断网
+        if arp_count >= 1 and arp_recent and not outbound_recent:
+            return "confirmed"
+
+        # 有 ARP 广播但可能有残余流量 → 大概率断网
+        if arp_count >= 1:
+            return "likely"
+
+        # 无信号 → 不确定
+        return "uncertain"
 
     # ---------------- 数据包构造 ----------------
     def build_poison(self):
@@ -422,6 +484,7 @@ class IsolationManager:
         with self._lock:
             items = list(self._active.values())
         out = []
+        now = time.time()
         for e in items:
             iso = e["iso"]
             out.append({
@@ -429,10 +492,13 @@ class IsolationManager:
                 "victim_mac": iso.victim_mac,
                 "mode": iso.mode,
                 "started_ts": e["started"],
-                "elapsed": int(time.time() - e["started"]),
+                "elapsed": int(now - e["started"]),
                 "sent": iso.stats["sent"],
                 "arp_requests": iso.stats.get("arp_requests", 0),
-                "verified": iso.verified,
+                "outbound_pkts": iso.stats.get("outbound_pkts", 0),
+                "status": iso.isolation_status,
+                "seconds_since_arp": int(now - iso.stats.get("last_arp_req", 0)) if iso.stats.get("last_arp_req") else -1,
+                "seconds_since_outbound": int(now - iso.stats.get("last_outbound", 0)) if iso.stats.get("last_outbound") else -1,
                 "dry_run": iso.dry_run,
             })
         return out
