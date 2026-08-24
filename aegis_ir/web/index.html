@@ -87,7 +87,8 @@
           <button id="scanBtn" class="btn primary">开始探测</button>
         </div>
         <div class="scan-form second">
-          <label class="chk"><input type="checkbox" id="optPassive"><span>零流量被动（只读 ARP 表，完全静默）</span></label>
+          <label class="chk"><input type="checkbox" id="optPassive"><span>零流量被动</span></label>
+          <span id="passiveWarn" class="passive-warn hidden">⚠ 只读 ARP 缓存，仅能发现本机最近通信过的设备，可能遗漏大量主机</span>
           <div id="rawMethods" class="method-chips hidden">
             <span class="lbl">raw 手段：</span>
             <label class="mchip"><input type="checkbox" value="arp"><span>ARP</span></label>

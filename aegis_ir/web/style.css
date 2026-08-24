@@ -170,6 +170,13 @@ select.input option { background: var(--bg3); color: var(--tx); padding: 8px; }
 .mchip input { display: none; }
 .mchip.on { border-color: var(--pri); color: #bccdff; background: var(--pri-dim); }
 
+/* 被动模式警告 */
+.passive-warn {
+  font-size: 12px; color: #ffd39a; background: #2c1e0a;
+  border: 1px solid #57401e; border-radius: 8px;
+  padding: 4px 12px; margin-left: 4px;
+}
+
 /* ────────── 进度条 ────────── */
 .progress { margin-top: 12px; display: flex; align-items: center; gap: 10px; }
 .progress .bar { flex: 1; height: 8px; border-radius: 4px; background: var(--bg3); overflow: hidden; border: 1px solid var(--line); }

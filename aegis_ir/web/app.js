@@ -846,6 +846,12 @@ function init() {
 
   $("#ifaceSel").addEventListener("change", (e) => { state.iface = e.target.value; prefillNet(); });
   $("#engineSel").addEventListener("change", updateEngineUI);
+  $("#optPassive").addEventListener("change", (e) => {
+    $("#passiveWarn").classList.toggle("hidden", !e.target.checked);
+    if (e.target.checked) {
+      toast("零流量被动模式：只读 ARP 缓存，不发送任何探测包。仅能发现本机最近通信过的设备，建议仅用于需要完全静默的场景", "");
+    }
+  });
   $$("#rawMethods .mchip").forEach(c => c.addEventListener("click", (e) => {
     e.preventDefault();
     c.classList.toggle("on");
@@ -868,8 +874,25 @@ function init() {
         }),
       });
       if (r.error) return toast(r.error, "err");
-      toast("探测已开始", "ok");
+      if ($("#optPassive").checked) {
+        toast("被动模式启动中（只读 ARP 缓存，可能遗漏设备）…", "");
+      } else {
+        toast("探测已开始", "ok");
+      }
       pollOnce();
+      // 被动扫描结束后如果结果太少，自动建议升级到主动探测
+      if ($("#optPassive").checked) {
+        const checkInterval = setInterval(async () => {
+          const s = await api("/api/scan").catch(() => null);
+          if (!s || s.running) return;
+          clearInterval(checkInterval);
+          const count = Object.keys(s.last?.hosts || {}).length;
+          if (count < 5) {
+            toast(`被动模式仅发现 ${count} 台设备（可能遗漏大量主机）。取消勾选「零流量被动」后重新探测可发现更多设备`, "err");
+          }
+        }, 2000);
+        setTimeout(() => clearInterval(checkInterval), 60000); // 最长等60秒
+      }
     } catch (e) { toast("请求失败: " + e.message, "err"); }
   });
 
