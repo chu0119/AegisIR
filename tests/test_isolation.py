@@ -52,20 +52,33 @@ class TestIsolationLogic(unittest.TestCase):
                      mode="bogus")
 
     def test_packet_shapes(self):
-        iso = Isolator("10.0.0.50", "aa:bb:cc:dd:ee:50", "10.0.0.1", "aa:bb:cc:dd:ee:01")
+        fake = "11:22:33:44:55:66"
+        iso = Isolator("10.0.0.50", "aa:bb:cc:dd:ee:50", "10.0.0.1", "aa:bb:cc:dd:ee:01",
+                       fake_mac=fake)
         self.assertEqual(len(iso.build_poison()), 1)   # offnet：仅目标→网关
         self.assertEqual(len(iso.build_restore()), 2)  # 网关纠正 + 免费 ARP
 
         peers = {"10.0.0.2": "aa:bb:cc:dd:ee:02", "10.0.0.3": "aa:bb:cc:dd:ee:03"}
         iso2 = Isolator("10.0.0.50", "aa:bb:cc:dd:ee:50", "10.0.0.1",
-                        "aa:bb:cc:dd:ee:01", mode="island", peers=peers)
+                        "aa:bb:cc:dd:ee:01", mode="island", peers=peers, fake_mac=fake)
         self.assertEqual(len(iso2.build_poison()), 1 + 2 * len(peers))
         self.assertEqual(len(iso2.build_restore()), 1 + 2 * len(peers) + 1)
         # 假 MAC 必须出现在毒包中、真实网关 MAC 必须出现在恢复包中
         poison = iso.build_poison()[0]
-        self.assertEqual(str(poison[ARP].hwsrc).lower(), DEFAULT_FAKE_MAC)
+        self.assertEqual(str(poison[ARP].hwsrc).lower(), fake)
         restore = iso.build_restore()[0]
         self.assertEqual(str(restore[ARP].hwsrc).lower(), "aa:bb:cc:dd:ee:01")
+
+    def test_random_fake_mac(self):
+        """未指定假 MAC 时应自动生成随机单播 MAC。"""
+        from aegis_ir.netutils import is_unicast_mac
+
+        iso = Isolator("10.0.0.50", "aa:bb:cc:dd:ee:50", "10.0.0.1", "aa:bb:cc:dd:ee:01")
+        self.assertTrue(is_unicast_mac(iso.fake_mac))
+        self.assertNotEqual(iso.fake_mac, "de:ad:be:ef:00:01")  # 不再是固定值
+        # 两次生成的应不同
+        iso2 = Isolator("10.0.0.50", "aa:bb:cc:dd:ee:50", "10.0.0.1", "aa:bb:cc:dd:ee:01")
+        self.assertNotEqual(iso.fake_mac, iso2.fake_mac)
 
     def test_prepare_isolation_guardrails(self):
         from aegis_ir.netutils import get_route

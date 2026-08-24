@@ -214,8 +214,12 @@
             <input id="setInterval" type="number" class="input" value="1" min="0.3" max="5" step="0.1">
           </div>
           <div class="field">
-            <label>污染用假 MAC（须为单播，默认 de:ad:be:ef:00:01）</label>
-            <input id="setFakeMac" class="input" placeholder="de:ad:be:ef:00:01">
+            <label>污染用假 MAC（留空 = 每次随机生成真实厂商 MAC）</label>
+            <input id="setFakeMac" class="input" placeholder="留空自动随机">
+          </div>
+          <div class="field">
+            <label>MAC 轮换间隔（秒，0 = 不轮换；>0 = 每N秒换一个新假MAC，更难被反制）</label>
+            <input id="setMacRotate" type="number" class="input" value="0" min="0" max="300" step="5">
           </div>
         </div>
         <div class="m-actions"><button id="setSave" class="btn primary">保存设置</button></div>
@@ -281,7 +285,12 @@
         <summary>高级选项（本次覆盖默认值）</summary>
         <div class="set-grid">
           <div class="field"><label>发包间隔（秒）</label><input id="mInterval" type="number" class="input" value="1" min="0.3" max="5" step="0.1"></div>
-          <div class="field"><label>污染用假 MAC</label><input id="mFakeMac" class="input" placeholder="de:ad:be:ef:00:01"></div>
+          <div class="field"><label>假 MAC（留空 = 随机）</label><input id="mFakeMac" class="input" placeholder="留空自动随机"></div>
+          <div class="field"><label>MAC 轮换间隔（秒，0 = 不换）</label><input id="mMacRotate" type="number" class="input" value="0" min="0" max="300" step="5"></div>
+        </div>
+        <div class="hint-line" style="margin-top:6px;padding:0 14px">
+          💡 留空假 MAC = 每次隔离自动生成真实厂商前缀的随机 MAC（不易被监控识别）；
+          MAC 轮换 > 0 = 隔离期间定期换新 MAC，目标更难用静态 ARP 反制。
         </div>
       </details>
       <label class="chk"><input type="checkbox" id="mDry"><span>演练模式（只预览数据包，不实际发送）</span></label>

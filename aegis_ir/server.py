@@ -188,9 +188,10 @@ def _do_isolate(body):
         prepared["gateway_ip"], prepared["gateway_mac"],
         mode=mode, peers=prepared["peers"],
         interval=float(body.get("interval") or 1.0),
-        fake_mac=(body.get("fake_mac") or DEFAULT_FAKE_MAC).lower(),
+        fake_mac=(body.get("fake_mac") or "").lower() or None,  # None=自动随机
         iface=prepared["iface"], dry_run=dry_run,
         no_restore=bool(body.get("no_restore")),
+        mac_rotate=int(body.get("mac_rotate") or 0),
     )
     if dry_run:
         return {"ok": True, "dry_run": True,

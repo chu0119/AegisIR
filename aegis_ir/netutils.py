@@ -221,6 +221,39 @@ def is_unicast_mac(mac: str) -> bool:
         return False
 
 
+# 常见真实厂商 OUI 前缀（用于生成不易被监控识别的假 MAC）
+REALISTIC_OUIS = [
+    "00:1a:2b",  # Ayecom
+    "00:50:56",  # VMware
+    "00:0c:29",  # VMware
+    "00:15:5d",  # Microsoft Hyper-V
+    "00:1b:21",  # Intel
+    "00:1f:16",  # Dell
+    "3c:2c:30",  # Hikvision
+    "b8:27:eb",  # Raspberry Pi
+    "d4:3d:7e",  # Dell
+    "f0:9f:c2",  # HP
+    "52:54:00",  # QEMU
+    "00:e0:4c",  # Realtek
+    "d4:ca:6d",  # Routerboard
+    "c8:3a:35",  # Tenda
+]
+
+
+def random_fake_mac() -> str:
+    """生成随机单播假 MAC（使用真实厂商 OUI 前缀，不易被 ARP 监控识别）。"""
+    import random as _random
+
+    oui = _random.choice(REALISTIC_OUIS)
+    nic = ":".join(f"{_random.randint(0, 255):02x}" for _ in range(3))
+    mac = f"{oui}:{nic}"
+    if is_unicast_mac(mac):
+        return mac
+    # 如果恰好是组播地址（概率极低），翻转最后一位
+    first = int(oui[:2], 16) & 0xFE
+    return f"{first:02x}{oui[2:]}:{nic}"
+
+
 # ---------------------------------------------------------------- 免权限原语
 def find_free_port(start: int = 8765) -> int:
     """从 start 起找到第一个可用端口（用于端口自适应）。"""

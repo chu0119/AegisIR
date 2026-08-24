@@ -177,8 +177,8 @@ def cmd_isolate(args):
         victim_ip = _pick_target(scan_data)
 
     excludes = [x.strip() for x in (args.exclude or "").split(",") if x.strip()]
-    fake_mac = (args.fake_mac or DEFAULT_FAKE_MAC).lower()
-    if not is_unicast_mac(fake_mac):
+    fake_mac = (args.fake_mac or "").lower() or None  # None = 自动随机
+    if fake_mac and not is_unicast_mac(fake_mac):
         raise SystemExit(f"[!] 假 MAC {fake_mac} 不是单播地址，会被部分网卡丢弃")
 
     try:
@@ -192,8 +192,9 @@ def cmd_isolate(args):
         prepared["victim_ip"], prepared["victim_mac"],
         prepared["gateway_ip"], prepared["gateway_mac"],
         mode=args.mode, peers=prepared["peers"], interval=args.interval,
-        fake_mac=fake_mac, iface=prepared["iface"], dry_run=args.dry_run,
-        no_restore=args.no_restore,
+        fake_mac=fake_mac,
+        iface=prepared["iface"], dry_run=args.dry_run,
+        no_restore=args.no_restore, mac_rotate=args.mac_rotate,
     )
 
     mode_desc = ("offnet：切断目标 <-> 网关（断外网，同网段邻居不受影响，影响面最小）"
@@ -334,7 +335,9 @@ def build_parser():
                           "gateway/full 为旧名称别名")
     ip_.add_argument("--interval", type=float, default=1.0, help="发包轮询间隔秒数（默认 1.0）")
     ip_.add_argument("--duration", type=int, default=0, help="隔离时长秒，0 表示不限直到 Ctrl+C")
-    ip_.add_argument("--fake-mac", default=None, help="用于污染的假 MAC（需为单播）")
+    ip_.add_argument("--fake-mac", default=None, help="污染用假 MAC（留空自动随机生成真实厂商 MAC）")
+    ip_.add_argument("--mac-rotate", type=int, default=0, metavar="秒",
+                     help="MAC 自动轮换间隔（0=不换；>0=每N秒换新 MAC，更难被反制）")
     ip_.add_argument("--exclude", default="", help="island 模式不参与污染的 IP 列表，逗号分隔")
     ip_.add_argument("--iface", default=None, help="指定网卡（interfaces 子命令查看 id）")
     ip_.add_argument("--show-ports", action="store_true", help="确认前快速探测目标开放端口")

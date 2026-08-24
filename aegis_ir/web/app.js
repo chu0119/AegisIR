@@ -11,7 +11,7 @@ const VIEWS = {
   nodes:    "节点管理",
   settings: "设置",
 };
-const DEFAULT_SETTINGS = { defMode: "offnet", defDur: 30, interval: 1.0, fakeMac: "" };
+const DEFAULT_SETTINGS = { defMode: "offnet", defDur: 30, interval: 1.0, fakeMac: "", macRotate: 0 };
 const MODE_INFO = {
   offnet: { label: "断外网 · 影响面最小（推荐首选）",
             desc: "切断目标与网关通信：无法访问互联网与跨网段，同网段邻居不受影响。" },
@@ -514,6 +514,9 @@ function renderActive() {
         <span class="hint">${esc(a.victim_mac)}</span>
         <span class="tag">${a.mode === "island" ? "彻底断网" : "断外网"}</span>
         ${a.dry_run ? '<span class="tag drill">演练</span>' : ""}
+        ${a.current_fake_mac ? `<span class="tag type" title="当前使用的假 MAC">🎭 ${esc(a.current_fake_mac)}</span>` : ""}
+        ${a.mac_changes ? `<span class="tag" title="MAC 已自动轮换次数">↻ ${a.mac_changes}次</span>` : ""}
+        ${a.gw_corrections ? `<span class="tag lock" title="网关尝试纠正 ARP 次数（已被反制）">⚔ 网关竞争 ${a.gw_corrections}</span>` : ""}
       </div>
       <div class="iso-metrics">
         <div class="metric">
@@ -536,6 +539,8 @@ function renderActive() {
           <div class="m-val">${a.seconds_since_outbound >= 0 ? a.seconds_since_outbound + "s" : "—"}</div>
           <div class="m-label">上次出站</div>
         </div>
+        ${a.mac_changes ? `<div class="metric"><div class="m-val">${a.mac_changes}</div><div class="m-label">MAC 轮换</div></div>` : ""}
+        ${a.gw_corrections ? `<div class="metric"><div class="m-val">${a.gw_corrections}</div><div class="m-label">网关竞争</div></div>` : ""}
       </div>
       <div class="iso-actions">
         <button class="btn verify-btn" data-verify="${esc(a.victim_ip)}">🔍 立即验证</button>
@@ -767,6 +772,7 @@ function openModal(ip, mac) {
   $("#mExcludeInput").value = "";
   $("#mInterval").value = state.settings.interval ?? 1;
   $("#mFakeMac").value = state.settings.fakeMac || "";
+  $("#mMacRotate").value = state.settings.macRotate ?? 0;
   $("#mNormal").classList.remove("hidden");
   $("#mPreview").classList.add("hidden");
   $("#modal").classList.remove("hidden");
@@ -831,6 +837,7 @@ async function confirmIsolate() {
         exclude,
         interval: Math.min(5, Math.max(0.3, parseFloat($("#mInterval").value || "1") || 1)),
         fake_mac: ($("#mFakeMac").value.trim()) || undefined,
+        mac_rotate: Math.min(300, Math.max(0, parseInt($("#mMacRotate").value || "0", 10) || 0)),
       }),
     });
     if (r.error) { toast(r.error, "err"); return; }
@@ -1037,6 +1044,7 @@ function init() {
   $("#setDur").value = state.settings.defDur ?? 30;
   $("#setInterval").value = state.settings.interval ?? 1;
   $("#setFakeMac").value = state.settings.fakeMac || "";
+  $("#setMacRotate").value = state.settings.macRotate ?? 0;
   $("#setSave").addEventListener("click", () => {
     const mac = $("#setFakeMac").value.trim();
     if (mac && !/^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$/.test(mac))
@@ -1046,6 +1054,7 @@ function init() {
       defDur: Math.max(0, parseInt($("#setDur").value || "30", 10) || 0),
       interval: Math.min(5, Math.max(0.3, parseFloat($("#setInterval").value || "1") || 1)),
       fakeMac: mac,
+      macRotate: Math.min(300, Math.max(0, parseInt($("#setMacRotate").value || "0", 10) || 0)),
     };
     saveSettings();
     toast("设置已保存（本地持久化，不影响其他操作员）", "ok");
