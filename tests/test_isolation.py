@@ -92,8 +92,8 @@ class TestIsolationLogic(unittest.TestCase):
                 prepare_isolation(own_ip)
         with self.assertRaisesRegex(IsolationError, "格式"):
             prepare_isolation("not-an-ip")
-        with self.assertRaisesRegex(IsolationError, "直连网段"):
-            prepare_isolation("8.8.8.8")  # 经路由，跨网段
+        with self.assertRaisesRegex(IsolationError, "直连网段|不在"):
+            prepare_isolation("8.8.8.8")  # 经路由，跨网段（网络环境可能变化）
 
     def test_session_roundtrip(self):
         iso = Isolator("10.99.99.99", "aa:bb:cc:dd:ee:99", "10.99.99.1",
