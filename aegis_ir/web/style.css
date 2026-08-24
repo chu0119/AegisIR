@@ -199,6 +199,7 @@ td.ip { font-weight: 700; font-family: Consolas, monospace; font-size: 14px; }
 }
 .tag.lock { color: #ff9aa4; border-color: #58242c; background: #2a1114; }
 .tag.far  { color: #9ec5ff; border-color: #274a77; background: #101f35; }
+.tag.type { color: #b8ccf0; border-color: #2a3a5c; background: #131c30; font-weight: 600; }
 .chip {
   display: inline-block; padding: 2px 9px; border-radius: 7px;
   font-size: 11.5px; margin-right: 3px; font-family: Consolas, monospace;

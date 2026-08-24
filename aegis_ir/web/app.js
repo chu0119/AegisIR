@@ -305,6 +305,8 @@ function updateEngineUI() {
 }
 
 /* ═══════════ 渲染：扫描 ═══════════ */
+let _hostsFingerprint = "";  // 上次渲染的稳定指纹，防止轮询重建 DOM 导致勾选丢失
+
 function renderScan() {
   const s = state.scan;
   if (!s) return;
@@ -326,18 +328,49 @@ function renderScan() {
 function hostMatches(ip, h) {
   const f = state.filter.toLowerCase();
   if (!f) return true;
-  return (ip + " " + (h.hostname || "") + " " + (h.vendor || "") + " " + (h.mac || ""))
+  return (ip + " " + (h.hostname || "") + " " + (h.vendor || "") + " " + (h.mac || "") + " " + inferType(h))
     .toLowerCase().includes(f);
 }
 
-function renderHosts(data) {
+/** 根据厂商+端口推断设备类型 */
+function inferType(h) {
+  const ports = new Set([...(h.ports || []).map(x => x.port), ...(h.tcp_ping_ports || [])]);
+  const vendor = (h.vendor || "").toLowerCase();
+  const hostname = (h.hostname || "").toLowerCase();
+  if (h.is_gateway) return "网关/路由";
+  if (h.is_self) return "本机";
+  if (ports.has(554) || /hikvision|dahua|axis|onvif/.test(vendor)) return "摄像头";
+  if (ports.has(9100) || /printer|hp|canon|epson|brother/.test(vendor)) return "打印机";
+  if (/synology|qnap|western digital/.test(vendor) || (ports.has(445) && ports.has(5000))) return "NAS";
+  if (/vmware|qemu|kvm|virtual|hyper-v/.test(vendor) || /vm|virt/.test(hostname)) return "虚拟机";
+  if (/raspberry|arduino|esp32/.test(vendor)) return "IoT/嵌入式";
+  if (ports.has(3389) && ports.has(445)) return "Windows 主机";
+  if (ports.has(22) && !ports.has(3389)) return "Linux 主机";
+  if (ports.has(445)) return "Windows 主机";
+  if (ports.has(80) || ports.has(443)) return "Web 服务";
+  return "未知";
+}
+
+function renderHosts(data, force = false) {
   const tbody = $("#hostsTable tbody");
-  state.checked.clear();
-  updateBatchBtn();
+
+  // 稳定指纹：scan_time + 主机 IP 列表 + 筛选条件
+  // 同一轮询周期内数据不变则跳过 DOM 重建（勾选状态不被销毁）
+  const fp = data
+    ? `${data.scan_time}|${Object.keys(data.hosts || {}).sort().join(",")}|${state.filter}`
+    : `empty|${state.filter}`;
+  if (!force && fp === _hostsFingerprint && tbody.children.length > 0) return;
+  _hostsFingerprint = fp;
+
+  // 保留当前勾选状态
+  const prevChecked = new Set(state.checked);
+
   if (!data || !Object.keys(data.hosts || {}).length) {
     tbody.innerHTML = `<tr class="empty"><td colspan="10">${
       data ? "未发现存活主机（可尝试更大范围或深度端口）" : "暂无数据 · 请先选择网卡与目标开始探测"}</td></tr>`;
     $("#hostsMeta").textContent = "";
+    state.checked.clear();
+    updateBatchBtn();
     return;
   }
   const eng = data.engine || "";
@@ -349,7 +382,9 @@ function renderHosts(data) {
   for (const [ip, h] of Object.entries(data.hosts)) {
     i++;
     if (!hostMatches(ip, h)) continue;
+    const dtype = inferType(h);
     const tags = [];
+    tags.push(`<span class="tag ${dtype === "未知" ? "" : "type"}">${esc(dtype)}</span>`);
     if (h.is_gateway) tags.push('<span class="tag lock">网关 🔒</span>');
     if (h.is_self) tags.push('<span class="tag lock">本机 🔒</span>');
     if (data.segment === "routed" && !h.is_self) tags.push('<span class="tag far">跨网段</span>');
@@ -357,34 +392,41 @@ function renderHosts(data) {
     const ports = (h.ports || []).map(x => `${x.port}/${esc(x.service)}`).slice(0, 5).join(" ")
       || ((h.tcp_ping_ports || []).length ? h.tcp_ping_ports.join(" ") : "-");
     const locked = h.is_gateway || h.is_self;
-    rows.push(`<tr data-dip="${esc(ip)}" title="点击查看设备详情">
-      <td class="cb">${locked ? "" : `<input type="checkbox" data-bip="${esc(ip)}">`}</td>
+    const wasChecked = prevChecked.has(ip);
+    rows.push(`<tr data-dip="${esc(ip)}" title="点击查看设备详情" ${wasChecked ? 'class="marked"' : ""}>
+      <td class="cb">${locked ? "" : `<input type="checkbox" data-bip="${esc(ip)}" ${wasChecked ? "checked" : ""}>`}</td>
       <td>${i}</td><td class="ip">${esc(ip)}</td><td>${esc(h.mac) || "-"}</td>
       <td>${esc((h.vendor || "-").slice(0, 16))}</td><td>${esc((h.hostname || "-").slice(0, 22))}</td>
-      <td>${chips}</td><td>${esc(ports)}</td><td>${tags.join(" ") || "-"}</td>
+      <td>${chips}</td><td>${esc(ports)}</td><td>${tags.join(" ")}</td>
       <td>${locked ? '<button class="btn sm" disabled title="网关/本机禁止隔离">🔒</button>'
                    : `<button class="btn sm danger" data-ip="${esc(ip)}" data-mac="${esc(h.mac || "")}">隔离</button>`}</td>
     </tr>`);
   }
   tbody.innerHTML = rows.length ? rows.join("")
     : `<tr class="empty"><td colspan="10">没有匹配筛选条件的主机</td></tr>`;
+  bindTableEvents(tbody);
+  // 恢复全选框状态
+  const allCbs = tbody.querySelectorAll("input[data-bip]");
+  $("#selAll").checked = allCbs.length > 0 && allCbs.length === state.checked.size;
+}
+
+function bindTableEvents(tbody) {
   tbody.querySelectorAll("button[data-ip]").forEach(b =>
     b.addEventListener("click", (e) => {
       e.stopPropagation();
       openModal(b.dataset.ip, b.dataset.mac);
     }));
-  tbody.querySelectorAll("input[data-bip]").forEach(b =>
-    b.addEventListener("click", (e) => e.stopPropagation()));
-  tbody.querySelectorAll("input[data-bip]").forEach(b =>
+  tbody.querySelectorAll("input[data-bip]").forEach(b => {
+    b.addEventListener("click", (e) => e.stopPropagation());
     b.addEventListener("change", () => {
       if (b.checked) state.checked.add(b.dataset.bip);
       else state.checked.delete(b.dataset.bip);
       b.closest("tr").classList.toggle("marked", b.checked);
       updateBatchBtn();
-    }));
+    });
+  });
   tbody.querySelectorAll("tr[data-dip]").forEach(tr =>
     tr.addEventListener("click", () => openDrawer(tr.dataset.dip)));
-  $("#selAll").checked = false;
 }
 
 function updateBatchBtn() {
@@ -396,11 +438,11 @@ function updateBatchBtn() {
 function exportCsv() {
   const data = state.scan && state.scan.last;
   if (!data || !Object.keys(data.hosts).length) return toast("没有可导出的数据", "err");
-  const head = ["IP", "MAC", "厂商", "主机名", "命中手段", "开放端口", "网关", "本机", "扫描时间", "网段", "引擎"];
+  const head = ["IP", "设备类型", "MAC", "厂商", "主机名", "命中手段", "开放端口", "网关", "本机", "扫描时间", "网段", "引擎"];
   const lines = [head.join(",")];
   for (const [ip, h] of Object.entries(data.hosts)) {
     lines.push([
-      ip, h.mac || "", (h.vendor || "").replace(",", " "), (h.hostname || "").replace(",", " "),
+      ip, inferType(h), h.mac || "", (h.vendor || "").replace(",", " "), (h.hostname || "").replace(",", " "),
       (h.hits || []).join("/"),
       (h.ports || []).map(x => x.port + "/" + x.service).join(" "),
       h.is_gateway ? "是" : "", h.is_self ? "是" : "",
@@ -502,10 +544,11 @@ function openDrawer(ip) {
   $("#dwBadges").innerHTML = badges.join(" ") || '<span class="hint">普通主机</span>';
 
   $("#dwInfo").innerHTML = `
+    <dt>设备类型</dt><dd><b style="color:var(--cyn)">${esc(inferType(h))}</b></dd>
     <dt>MAC 地址</dt><dd>${esc(h.mac) || "未知"}</dd>
     <dt>厂商</dt><dd title="${esc(h.vendor || "")}">${esc(h.vendor || "未知")}</dd>
     <dt>主机名</dt><dd>${esc(h.hostname || "未解析到")}</dd>
-    <dt>快速端口命中</dt><dd>${(h.tcp_ping_ports || []).join(" ") || "-"}</dd>
+    <dt>开放端口</dt><dd>${(h.ports || []).map(x => `${x.port}/${esc(x.service)}`).join(" ") || (h.tcp_ping_ports || []).join(" ") || "未探测到"}</dd>
     <dt>首次发现</dt><dd>${esc(state.scan && state.scan.last ? state.scan.last.scan_time : "-")}</dd>`;
 
   $("#dwHits").innerHTML = (h.hits || []).length
@@ -730,15 +773,22 @@ async function doRestore(ip) {
 
 /* ═══════════ 轮询 ═══════════ */
 let tick = 0;
+let _lastScanTime = "";  // 上次渲染的 scan_time，防止轮询重建表格销毁勾选状态
+
 async function pollOnce() {
   try {
     const [scan, iso, sess, ev] = await Promise.all([
       api("/api/scan"), api("/api/isolate"), api("/api/sessions"), api("/api/events"),
     ]);
+
+    // 只在扫描数据真正变化时才重绘主机表（scan_time 或进度状态变了）
+    const scanTime = scan.last ? scan.last.scan_time : "";
+    const scanChanged = scanTime !== _lastScanTime || (scan.running !== (state.scan && state.scan.running));
     state.scan = scan;
     state.active = iso.active || [];
     state.sessions = sess.sessions || [];
     state.events = ev.events || [];
+
     if (tick++ % 5 === 0) {
       const [doc, ifs] = await Promise.all([api("/api/doctor"), api("/api/interfaces")]);
       state.doctor = doc;
@@ -749,7 +799,27 @@ async function pollOnce() {
       }
       renderDoctor();
     }
-    renderScan(); renderActive(); renderSessions(); renderEvents();
+
+    // 扫描进度条始终更新（轻量，不重建表格）
+    const p = $("#scanProgress");
+    if (scan.running) {
+      p.classList.remove("hidden");
+      const [done, total] = scan.progress || [0, 0];
+      p.querySelector(".txt").textContent =
+        `${scan.stage || "探测中"} ${total ? Math.round(done / total * 100) + "%" : ""} · 请稍候`;
+      $("#scanBtn").disabled = true;
+    } else {
+      p.classList.add("hidden");
+      $("#scanBtn").disabled = false;
+    }
+
+    // 只在扫描结果变化时才重建主机表格
+    if (scanChanged) {
+      _lastScanTime = scanTime;
+      renderHosts(scan.last);
+    }
+
+    renderActive(); renderSessions(); renderEvents();
   } catch (e) {
     /* 节点离线等场景静默重试 */
   }
@@ -805,7 +875,7 @@ function init() {
 
   $("#filterInput").addEventListener("input", (e) => {
     state.filter = e.target.value;
-    if (state.scan) renderHosts(state.scan.last);
+    if (state.scan) renderHosts(state.scan.last, true);
   });
   $("#csvBtn").addEventListener("click", exportCsv);
   $("#selAll").addEventListener("change", (e) => {
@@ -819,7 +889,7 @@ function init() {
     updateBatchBtn();
   });
   $("#batchBtn").addEventListener("click", () => {
-    if (state.checked.size) openBatchModal(state.checked);
+    if (state.checked.size) openBatchModal([...state.checked]);
   });
 
   const manualGo = (inputSel) => () => {
