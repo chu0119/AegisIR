@@ -480,6 +480,8 @@ const STATUS_INFO = {
     desc: "未实际发送数据包" },
 };
 
+let _activeFingerprint = "";  // IP列表+状态指纹，没变就不重建卡片
+
 function renderActive() {
   const list = $("#activeList");
   const empty = $("#isoEmpty");
@@ -487,15 +489,28 @@ function renderActive() {
   badge.textContent = state.active.length;
   badge.classList.toggle("hidden", !state.active.length);
   if (!state.active.length) {
+    _activeFingerprint = "";
     empty.classList.remove("hidden");
     list.innerHTML = "";
     return;
   }
   empty.classList.add("hidden");
+
+  // 指纹 = IP列表 + 各自状态。没变就只做轻量数值更新，不重建卡片
+  const fp = state.active.map(a => `${a.victim_ip}:${a.status}:${a.mac_changes}:${a.gw_corrections}`).join("|");
+  if (fp !== _activeFingerprint) {
+    _activeFingerprint = fp;
+    _rebuildActiveCards(list);
+  }
+  _updateActiveValues(list);  // 每轮都更新计时器和计数（轻量 textContent 赋值）
+}
+
+function _rebuildActiveCards(list) {
   list.innerHTML = state.active.map(a => {
     const si = STATUS_INFO[a.status] || STATUS_INFO.uncertain;
+    const ipId = esc(a.victim_ip).replace(/\./g, "_");
     return `
-    <div class="iso-card ${si.cls}">
+    <div class="iso-card ${si.cls}" data-aip="${esc(a.victim_ip)}">
       <div class="iso-head">
         <div class="iso-status">
           <span class="st-icon">${si.icon}</span>
@@ -505,7 +520,7 @@ function renderActive() {
           </div>
         </div>
         <div class="iso-timer">
-          <div class="timer">${fmtElapsed(a.elapsed)}</div>
+          <div class="timer" data-t="timer">${fmtElapsed(a.elapsed)}</div>
           <div class="hint">已隔离</div>
         </div>
       </div>
@@ -515,44 +530,47 @@ function renderActive() {
         <span class="tag">${a.mode === "island" ? "彻底断网" : "断外网"}</span>
         ${a.dry_run ? '<span class="tag drill">演练</span>' : ""}
         ${a.current_fake_mac ? `<span class="tag type" title="当前使用的假 MAC">🎭 ${esc(a.current_fake_mac)}</span>` : ""}
-        ${a.mac_changes ? `<span class="tag" title="MAC 已自动轮换次数">↻ ${a.mac_changes}次</span>` : ""}
-        ${a.gw_corrections ? `<span class="tag lock" title="网关尝试纠正 ARP 次数（已被反制）">⚔ 网关竞争 ${a.gw_corrections}</span>` : ""}
+        ${a.mac_changes ? `<span class="tag" title="MAC 已自动轮换次数">↻ <span data-t="mac"> ${a.mac_changes}</span>次</span>` : ""}
+        ${a.gw_corrections ? `<span class="tag lock" title="网关尝试纠正 ARP 次数（已被反制）">⚔ 网关竞争 <span data-t="gw">${a.gw_corrections}</span></span>` : ""}
       </div>
       <div class="iso-metrics">
-        <div class="metric">
-          <div class="m-val">${a.arp_requests}</div>
-          <div class="m-label">ARP 广播</div>
-        </div>
-        <div class="metric">
-          <div class="m-val">${a.outbound_pkts}</div>
-          <div class="m-label">出站包</div>
-        </div>
-        <div class="metric">
-          <div class="m-val">${a.sent}</div>
-          <div class="m-label">累计发包</div>
-        </div>
-        <div class="metric">
-          <div class="m-val">${a.seconds_since_arp >= 0 ? a.seconds_since_arp + "s" : "—"}</div>
-          <div class="m-label">上次 ARP</div>
-        </div>
-        <div class="metric">
-          <div class="m-val">${a.seconds_since_outbound >= 0 ? a.seconds_since_outbound + "s" : "—"}</div>
-          <div class="m-label">上次出站</div>
-        </div>
-        ${a.mac_changes ? `<div class="metric"><div class="m-val">${a.mac_changes}</div><div class="m-label">MAC 轮换</div></div>` : ""}
-        ${a.gw_corrections ? `<div class="metric"><div class="m-val">${a.gw_corrections}</div><div class="m-label">网关竞争</div></div>` : ""}
+        <div class="metric"><div class="m-val" data-t="arp">${a.arp_requests}</div><div class="m-label">ARP 广播</div></div>
+        <div class="metric"><div class="m-val" data-t="ob">${a.outbound_pkts}</div><div class="m-label">出站包</div></div>
+        <div class="metric"><div class="m-val" data-t="sent">${a.sent}</div><div class="m-label">累计发包</div></div>
+        <div class="metric"><div class="m-val" data-t="arp_t">${a.seconds_since_arp >= 0 ? a.seconds_since_arp + "s" : "—"}</div><div class="m-label">上次 ARP</div></div>
+        <div class="metric"><div class="m-val" data-t="ob_t">${a.seconds_since_outbound >= 0 ? a.seconds_since_outbound + "s" : "—"}</div><div class="m-label">上次出站</div></div>
       </div>
       <div class="iso-actions">
         <button class="btn verify-btn" data-verify="${esc(a.victim_ip)}">🔍 立即验证</button>
         <button class="btn ok" data-restore="${esc(a.victim_ip)}">恢复网络</button>
       </div>
-      <div class="iso-verify-result hidden" id="vr-${esc(a.victim_ip).replace(/\./g, '_')}"></div>
+      <div class="iso-verify-result hidden" id="vr-${ipId}"></div>
     </div>`;
   }).join("");
   list.querySelectorAll("button[data-restore]").forEach(b =>
     b.addEventListener("click", () => doRestore(b.dataset.restore)));
   list.querySelectorAll("button[data-verify]").forEach(b =>
     b.addEventListener("click", () => doVerify(b.dataset.verify)));
+}
+
+function _updateActiveValues(list) {
+  // 轻量更新：只改 textContent，不重建 DOM（防止闪烁和事件丢失）
+  for (const a of state.active) {
+    const card = list.querySelector(`[data-aip="${a.victim_ip}"]`);
+    if (!card) continue;
+    const timer = card.querySelector('[data-t="timer"]');
+    if (timer) timer.textContent = fmtElapsed(a.elapsed);
+    const arp = card.querySelector('[data-t="arp"]');
+    if (arp) arp.textContent = a.arp_requests;
+    const ob = card.querySelector('[data-t="ob"]');
+    if (ob) ob.textContent = a.outbound_pkts;
+    const sent = card.querySelector('[data-t="sent"]');
+    if (sent) sent.textContent = a.sent;
+    const arpT = card.querySelector('[data-t="arp_t"]');
+    if (arpT) arpT.textContent = a.seconds_since_arp >= 0 ? a.seconds_since_arp + "s" : "—";
+    const obT = card.querySelector('[data-t="ob_t"]');
+    if (obT) obT.textContent = a.seconds_since_outbound >= 0 ? a.seconds_since_outbound + "s" : "—";
+  }
 }
 
 async function doVerify(ip) {

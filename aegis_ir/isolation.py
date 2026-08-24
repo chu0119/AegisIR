@@ -493,6 +493,8 @@ def list_sessions(limit=50):
     items.sort(reverse=True)
     for _mt, d in items[:limit]:
         state = "运行中" if d.get("active") else ("已恢复" if d.get("restored") else "已结束")
+        if d.get("end_reason") and d["end_reason"] != "normal":
+            state = f"异常: {d['end_reason'][:40]}"
         out.append({
             "victim_ip": d.get("victim_ip", "?"),
             "mode": normalize_mode(d.get("mode", "offnet")),
@@ -524,11 +526,40 @@ class IsolationManager:
         t.start()
 
     def _runner(self, iso, ev, duration):
+        error = None
+        run_completed = False
         try:
             iso.run(duration=duration, stop_event=ev)
+            run_completed = True
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+            print(f"[!] 隔离线程异常 ({iso.victim_ip}): {error}")
+            import traceback
+            traceback.print_exc()
+            # run() 异常退出时它的 finally 可能没执行到 restore，这里兜底
+            try:
+                if not iso.no_restore:
+                    iso.restore()
+            except Exception as re:
+                print(f"[!] 恢复也失败 ({iso.victim_ip}): {re}")
         finally:
+            # 标记会话结束原因
+            try:
+                if iso.session_file and os.path.exists(iso.session_file):
+                    with open(iso.session_file, encoding="utf-8") as f:
+                        d = json.load(f)
+                    d["active"] = False
+                    d["end_reason"] = error or "normal"
+                    d["restored"] = run_completed or error is None
+                    with open(iso.session_file, "w", encoding="utf-8") as f:
+                        json.dump(d, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+            # 从活跃列表移除
             with self._lock:
                 self._active.pop(iso.victim_ip, None)
+            if error:
+                audit_event("isolate_error", victim=iso.victim_ip, error=error)
 
     def stop(self, ip):
         with self._lock:

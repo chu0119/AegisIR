@@ -569,7 +569,9 @@ def serve(port=8765, listen="loopback", token=None, open_browser=True):
             actual_port = find_free_port(actual_port + 1)
             if actual_port == old:
                 raise SystemExit(f"[!] 端口 {port}-{old} 全部被占用，请用 --port 指定其他端口")
-            print(f"[!] 端口 {old} 被占用，自动切换到 {actual_port}")
+            print(f"[!] ⚠ 端口 {old} 被占用，自动切换到 {actual_port}")
+            print(f"[!] ⚠ 请注意：8765 被其他进程占用可能是残留的调试实例，建议关闭后重试")
+            print(f"[!] ⚠ 当前实际端口: {actual_port}（浏览器请访问此端口）")
 
     audit_event("gui_start", host=host, port=actual_port)
     print("=" * 60)
