@@ -239,17 +239,26 @@ function renderDoctor() {
   $("#pills").innerHTML =
     (d.raw_ok ? pill(true, "完整引擎") : pill(false, "兼容引擎", !d.admin)) +
     pill(d.admin, "管理员") +
+    pill(true, `端口 ${location.port}`) +
     (d.onlink ? pill(true, d.onlink) : pill(false, "网段未知")) +
     (d.gateway_ip ? pill(true, "网关 " + d.gateway_ip) : pill(false, "网关未知"));
 
+  // 更新浏览器标签页标题，显示管理员状态和端口
+  document.title = `AegisIR :${location.port}${d.admin ? "" : " ⚠非管理员"}`;
+
   const banner = $("#banner");
-  if (!d.pcap_ok) {
+  if (!d.admin) {
     banner.classList.remove("hidden");
-    banner.innerHTML = "⚠ 抓包驱动不可用：请安装 Npcap 后重启（隔离功能依赖它）。";
-  } else if (!d.admin) {
+    banner.className = "banner critical";
+    banner.innerHTML = "🚫 <b>未以管理员运行 — 隔离功能完全不可用</b>　探测仍可用（兼容引擎），但 ARP 阻断需要管理员权限发原始数据包。" +
+      "　<b>解决方法</b>：关闭所有 AegisIR 窗口和终端，右键「以管理员身份运行」AegisIR.exe 或终端重新启动。";
+  } else if (!d.pcap_ok) {
     banner.classList.remove("hidden");
-    banner.innerHTML = "⚠ 当前未以管理员运行：探测使用兼容引擎（可用），隔离/恢复需要管理员权限。";
-  } else banner.classList.add("hidden");
+    banner.className = "banner critical";
+    banner.innerHTML = "🚫 <b>Npcap 抓包驱动不可用</b>　隔离功能依赖 Npcap。请到 <a href='https://npcap.com' target='_blank' style='color:#ffd39a'>npcap.com</a> 下载安装后重启。";
+  } else {
+    banner.classList.add("hidden");
+  }
 
   const eng = $("#engineBadge");
   eng.className = "engine " + (d.raw_ok ? "" : "compat");
@@ -639,7 +648,15 @@ function openModal(ip, mac) {
     .catch(() => { if (state.target && state.target.ip === ip) mp.textContent = "可达性检测失败（节点无响应）"; });
 
   const block = $("#mBlock");
-  if (!onlink) {
+  const isAdmin = state.doctor ? state.doctor.admin : false;
+  const isDry = $("#mDry").checked;
+  if (!isAdmin && !isDry) {
+    block.classList.remove("hidden");
+    block.innerHTML = "🚫 <b>当前节点未以管理员运行，无法执行隔离</b><br>" +
+      "关闭所有 AegisIR 窗口，右键「以管理员身份运行」重新启动后再试。<br>" +
+      "（勾选下方「演练模式」可预览数据包，无需管理员）";
+    $("#mOk").disabled = true;
+  } else if (!onlink) {
     block.classList.remove("hidden");
     block.innerHTML = "目标不在所选网卡的直连网段，ARP 隔离无法穿越路由。<br>" +
       "① 确认上方「执行网卡」选择正确；② 若目标确在其他网段，请到「节点管理」按指引部署节点后接入。";
@@ -671,6 +688,14 @@ function openModal(ip, mac) {
   $("#mDur").value = defDur;
   $$(".pre").forEach(x => x.classList.toggle("on", x.dataset.min === defDur));
   $("#mDry").checked = false;
+  $("#mDry").onchange = () => {
+    // 演练模式切换时更新确认按钮状态（非管理员 + 演练 = 可用）
+    if (!isAdmin) {
+      $("#mOk").disabled = !$("#mDry").checked;
+      if (!$("#mDry").checked) $("#mBlock").classList.remove("hidden");
+      else $("#mBlock").classList.add("hidden");
+    }
+  };
   $("#mExcludeInput").value = "";
   $("#mInterval").value = state.settings.interval ?? 1;
   $("#mFakeMac").value = state.settings.fakeMac || "";
@@ -703,6 +728,7 @@ async function confirmIsolate() {
   if (!t) return;
   const dry = $("#mDry").checked;
   const dur = Math.max(0, parseInt($("#mDur").value || "0", 10));
+  const dry_run_only = $("#mDry").checked;
   const modeEl = document.querySelector('input[name="mode"]:checked');
   const excludeVal = $("#mExcludeInput").value.trim();
   const exclude = excludeVal ? excludeVal.split(/[,,\s]+/).filter(Boolean) : [];

@@ -106,6 +106,13 @@ nav { display: flex; flex-direction: column; gap: 5px; padding: 6px 12px; flex: 
 .node-bar { margin-left: auto; display: flex; gap: 8px; align-items: center; }
 
 .banner { padding: 10px 26px; font-size: 13px; flex: none; background: #2c1e0a; color: #ffd39a; border-bottom: 1px solid #57401e; }
+.banner.critical {
+  background: #3a0d12; color: #ffb3ba; border-bottom: 2px solid #ff5d6c;
+  font-size: 14px; padding: 14px 26px;
+  animation: banner-pulse 3s infinite;
+}
+.banner.critical b { color: #ff8a94; }
+@keyframes banner-pulse { 50% { box-shadow: 0 2px 18px #ff5d6c33; } }
 
 .view { flex: 1; overflow-y: auto; padding: 22px 26px; display: flex; flex-direction: column; gap: 18px; }
 
